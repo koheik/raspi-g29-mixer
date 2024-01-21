@@ -3,16 +3,12 @@
 #include "proxy.h"
 #include "misc.h"
 
+#include "input-device.h"
+
 int verbose_level = 0;
 bool please_stop_ep0 = false;
 volatile bool please_stop_eps = false; // Use volatile to mark as atomic.
 
-bool injection_enabled = false;
-std::string injection_file = "injection.json";
-Json::Value injection_config;
-
-bool customized_config_enabled = false;
-std::string customized_config_file = "config.json";
 bool reset_device_before_proxy = true;
 bool bmaxpacketsize0_must_greater_than_64 = true;
 
@@ -24,14 +20,10 @@ void usage() {
 	printf("\t--driver: use specific driver\n");
 	printf("\t--vendor_id: use specific vendor_id of USB device\n");
 	printf("\t--product_id: use specific product_id of USB device\n");
-	printf("\t--enable_injection: enable the injection feature\n");
-	printf("\t--injection_file: specify the file that contains injection rules\n");
-	printf("\t--enable_customized_config: enable the customized config feature\n\n");
 	printf("* If `device` not specified, `usb-proxy` will use `dummy_udc.0` as default device.\n");
 	printf("* If `driver` not specified, `usb-proxy` will use `dummy_udc` as default driver.\n");
 	printf("* If both `vendor_id` and `product_id` not specified, `usb-proxy` will connect\n");
 	printf("  the first USB device it can find.\n");
-	printf("* If `injection_file` not specified, `usb-proxy` will use `injection.json` by default.\n\n");
 	exit(1);
 }
 
@@ -158,10 +150,10 @@ int setup_host_usb_desc() {
 
 int main(int argc, char **argv)
 {
-	const char *device = "dummy_udc.0";
-	const char *driver = "dummy_udc";
-	int vendor_id = -1;
-	int product_id = -1;
+	const char *device = "fe980000.usb";
+	const char *driver = "fe980000.usb";
+	int vendor_id = 0x046d; // Logitech
+	int product_id = 0xc24f; // G29 [PS3]
 
 	struct sigaction action;
 	memset(&action, 0, sizeof(struct sigaction));
@@ -178,9 +170,6 @@ int main(int argc, char **argv)
 		{"driver", required_argument, &lopt, 4},
 		{"vendor_id", required_argument, &lopt, 5},
 		{"product_id", required_argument, &lopt, 6},
-		{"enable_injection", no_argument, &lopt, 7},
-		{"injection_file", required_argument, &lopt, 8},
-		{"enable_customized_config", no_argument, &lopt, 9},
 		{0, 0, 0, 0}
 	};
 	while ((opt = getopt_long(argc, argv, optstring, long_options, &loidx)) != -1) {
@@ -211,81 +200,22 @@ int main(int argc, char **argv)
 		case 6:
 			product_id = std::stoul(optarg, nullptr, 16);
 			break;
-		case 7:
-			injection_enabled = true;
-			break;
-		case 8:
-			injection_file = optarg;
-			break;
-		case 9:
-			customized_config_enabled = true;
-			break;
-
 		default:
 			usage();
 			return 1;
-		}
-	}
-	printf("Device is: %s\n", device);
-	printf("Driver is: %s\n", driver);
-	printf("vendor_id is: %d\n", vendor_id);
-	printf("product_id is: %d\n", product_id);
-
-	if (injection_enabled) {
-		printf("Injection enabled\n");
-		if (injection_file.empty()) {
-			printf("Injection file not specified\n");
-			return 1;
-		}
-		struct stat buffer;
-		if (stat(injection_file.c_str(), &buffer) != 0) {
-			printf("Injection file %s not found\n", injection_file.c_str());
-			return 1;
-		}
-
-		Json::Reader jsonReader;
-		std::ifstream ifs(injection_file.c_str());
-		if (jsonReader.parse(ifs, injection_config))
-			printf("Parsed injection file: %s\n", injection_file.c_str());
-		else {
-			printf("Error parsing injection file: %s\n", injection_file.c_str());
-			return 1;
-		}
-		ifs.close();
-	}
-
-	if (customized_config_enabled) {
-		struct stat buffer;
-		if (stat(customized_config_file.c_str(), &buffer) != 0) {
-			printf("Customized config file %s not found\n", customized_config_file.c_str());
-			return 1;
-		}
-
-		Json::Reader jsonReader;
-		std::ifstream ifs(customized_config_file.c_str());
-		Json::Value customized_config;
-		if (jsonReader.parse(ifs, customized_config))
-			printf("Parsed customized config file: %s\n", customized_config_file.c_str());
-		else {
-			printf("Error parsing customized config file: %s\n", customized_config_file.c_str());
-			return 1;
-		}
-		ifs.close();
-
-		if (customized_config["reset_device_before_proxy"] == false) {
-			printf("reset_device_before_proxy set to false\n");
-			reset_device_before_proxy = false;
-		}
-		if (customized_config["bmaxpacketsize0_must_greater_than_64"] == false) {
-			printf("bmaxpacketsize0_must_greater_than_64 set to false\n");
-			bmaxpacketsize0_must_greater_than_64 = false;
 		}
 	}
 
 	while (connect_device(vendor_id, product_id)) {
 		sleep(1);
 	}
-	printf("Device opened successfully\n");
+	printf("Wheel Device opened successfully\n");
+
+	InputDevice trim;
+	while (trim.connect_device(0x2341, 0x8037)) {
+		sleep(1);
+	}
+	printf("Trim Device opened successfully\n");
 
 	setup_host_usb_desc();
 	printf("Setup USB config successfully\n");
@@ -294,7 +224,7 @@ int main(int argc, char **argv)
 	usb_raw_init(fd, USB_SPEED_HIGH, driver, device);
 	usb_raw_run(fd);
 
-	ep0_loop(fd);
+	ep0_loop(fd, &trim);
 
 	close(fd);
 

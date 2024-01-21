@@ -1,26 +1,18 @@
-#include "device-libusb.h"
+#include "input-device.h"
 
-libusb_device 			**devs;
-libusb_device_handle 		*dev_handle;
-libusb_context 			*context = NULL;
-libusb_hotplug_callback_handle	callback_handle = -1;
-
-struct libusb_device_descriptor		device_device_desc;
-struct libusb_config_descriptor		**device_config_desc;
-
-pthread_t hotplug_monitor_thread;
-
-int hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
+int InputDevice::hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			struct libusb_device *dev __attribute__((unused)),
 			libusb_hotplug_event envet __attribute__((unused)),
-			void *user_data __attribute__((unused))) {
+			void *user_data __attribute__((unused)))
+{
 	printf("Hotplug event\n");
 
 	kill(0, SIGINT);
 	return 0;
 }
 
-void *hotplug_monitor(void *arg __attribute__((unused))) {
+void *InputDevice::hotplug_monitor(void *arg __attribute__((unused)))
+{
 	printf("Start hotplug_monitor thread, thread id(%d)\n", gettid());
 	while(true) {
 		usleep(100 * 1000);
@@ -28,7 +20,8 @@ void *hotplug_monitor(void *arg __attribute__((unused))) {
 	}
 }
 
-int get_descriptor(libusb_device *device) {
+int InputDevice::get_descriptor(libusb_device *device)
+{
 	int result;
 	result = libusb_get_device_descriptor(device, &device_device_desc);
 	if (result != LIBUSB_SUCCESS) {
@@ -54,7 +47,7 @@ int get_descriptor(libusb_device *device) {
 	return LIBUSB_SUCCESS;
 }
 
-int connect_device(int vendor_id, int product_id) {
+int InputDevice::connect_device(int vendor_id, int product_id) {
 	int result;
 	result = libusb_init(&context);
 	if (result < 0) {
@@ -151,7 +144,7 @@ int connect_device(int vendor_id, int product_id) {
 					libusb_strerror((libusb_error)result));
 			return result;
 		}
-		sleep(7);
+		usleep(1000);
 	}
 
 	//check that device is responsive
@@ -167,7 +160,7 @@ int connect_device(int vendor_id, int product_id) {
 		result = libusb_hotplug_register_callback(context,
 			(libusb_hotplug_event) (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT),
 			(libusb_hotplug_flag) 0, vendor_id, product_id,
-			LIBUSB_HOTPLUG_MATCH_ANY, hotplug_callback, NULL, &callback_handle);
+			LIBUSB_HOTPLUG_MATCH_ANY, InputDevice::hotplug_callback, NULL, &callback_handle);
 
 		if (result != LIBUSB_SUCCESS) {
 			fprintf(stderr, "Error registering callback\n");
@@ -175,13 +168,13 @@ int connect_device(int vendor_id, int product_id) {
 			return result;
 		}
 		pthread_create(&hotplug_monitor_thread, 0,
-			hotplug_monitor, nullptr);
+			InputDevice::hotplug_monitor, nullptr);
 	}
 
 	return 0;
 }
 
-void reset_device() {
+void InputDevice::reset_device() {
 	int result = libusb_reset_device(dev_handle);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "Error resetting device: %s\n",
@@ -189,7 +182,7 @@ void reset_device() {
 	}
 }
 
-void set_configuration(int configuration) {
+void InputDevice::set_configuration(int configuration) {
 	int result = libusb_set_configuration(dev_handle, configuration);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "Error setting configuration(%d): %s\n",
@@ -197,7 +190,7 @@ void set_configuration(int configuration) {
 	}
 }
 
-void claim_interface(int interface) {
+void InputDevice::claim_interface(int interface) {
 	int result = libusb_claim_interface(dev_handle, interface);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "Error claiming interface(%d): %s\n",
@@ -205,7 +198,7 @@ void claim_interface(int interface) {
 	}
 }
 
-void release_interface(int interface) {
+void InputDevice::release_interface(int interface) {
 	int result = libusb_release_interface(dev_handle, interface);
 	if (result != LIBUSB_SUCCESS && result != LIBUSB_ERROR_NOT_FOUND) {
 		fprintf(stderr, "Error releasing interface(%d): %s\n",
@@ -213,7 +206,7 @@ void release_interface(int interface) {
 	}
 }
 
-void set_interface_alt_setting(int interface, int altsetting) {
+void InputDevice::set_interface_alt_setting(int interface, int altsetting) {
 	int result = libusb_set_interface_alt_setting(dev_handle, interface, altsetting);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "Error setting interface altsetting(%d, %d): %s\n",
@@ -221,7 +214,7 @@ void set_interface_alt_setting(int interface, int altsetting) {
 	}
 }
 
-int control_request(const usb_ctrlrequest *setup_packet, int *nbytes,
+int InputDevice::control_request(const usb_ctrlrequest *setup_packet, int *nbytes,
 			unsigned char **dataptr, int timeout) {
 	int result = libusb_control_transfer(dev_handle,
 					setup_packet->bRequestType, setup_packet->bRequest,
@@ -246,7 +239,7 @@ int control_request(const usb_ctrlrequest *setup_packet, int *nbytes,
 	return 0;
 }
 
-int send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
+int InputDevice::send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 			int length) {
 	int transferred;
 	int attempt = 0;
@@ -283,7 +276,7 @@ int send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 
 			attempt++;
 		} while ((result == LIBUSB_ERROR_PIPE || result == LIBUSB_ERROR_TIMEOUT || transferred != length)
-					&& attempt < MAX_ATTEMPTS);
+					&& attempt < ID_MAX_ATTEMPTS);
 		break;
 	case USB_ENDPOINT_XFER_INT:
 		result = libusb_interrupt_transfer(dev_handle, endpoint, dataptr, length, &transferred, 0);
@@ -301,7 +294,7 @@ int send_data(uint8_t endpoint, uint8_t attributes, uint8_t *dataptr,
 	return result;
 }
 
-int receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
+int InputDevice::receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 			uint8_t **dataptr, int *length, int timeout) {
 	int result = LIBUSB_SUCCESS;
 	timeout = 0;
@@ -325,7 +318,7 @@ int receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 				libusb_clear_halt(dev_handle, endpoint);
 
 			attempt++;
-		} while ((result == LIBUSB_ERROR_PIPE || result == LIBUSB_ERROR_TIMEOUT) && attempt < MAX_ATTEMPTS);
+		} while ((result == LIBUSB_ERROR_PIPE || result == LIBUSB_ERROR_TIMEOUT) && attempt < ID_MAX_ATTEMPTS);
 		break;
 	case USB_ENDPOINT_XFER_INT:
 		*dataptr = new uint8_t[maxPacketSize];
@@ -341,4 +334,17 @@ int receive_data(uint8_t endpoint, uint8_t attributes, uint16_t maxPacketSize,
 	}
 
 	return result;
+}
+
+InputDevice::~InputDevice()
+{
+	delete[] device_config_desc;
+
+	if (context && callback_handle != -1) {
+		libusb_hotplug_deregister_callback(context, callback_handle);
+	}
+	if (hotplug_monitor_thread &&
+		pthread_join(hotplug_monitor_thread, NULL)) {
+		fprintf(stderr, "Error join hotplug_monitor_thread\n");
+	}
 }
