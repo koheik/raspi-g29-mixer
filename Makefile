@@ -37,8 +37,8 @@ setup:
 	echo "raw_gadget" | sudo tee -a /etc/modules
 
 install: $(PROGRAM)
-	sudo cp raspi-g29-mixer.service /lib/systemd/system/.
-	sudo cp raspi-g29-mixer /usr/local/bin/.
+	sudo cp -f raspi-g29-mixer.service /lib/systemd/system/.
+	sudo cp -f raspi-g29-mixer /usr/local/bin/.
 	sudo chmod 644 /lib/systemd/system/raspi-g29-mixer.service
 	sudo systemctl daemon-reload
 	sudo systemctl enable raspi-g29-mixer.service
