@@ -1,0 +1,5 @@
+--- raw-gadget/raw_gadget/raw_gadget.c.org	2024-01-23 12:11:54
++++ raw-gadget/raw_gadget/raw_gadget.c	2024-01-23 12:12:10
+@@ -595 +595 @@
+-	ret = usb_gadget_probe_driver(&dev->driver);
++	ret = usb_gadget_register_driver(&dev->driver);

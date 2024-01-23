@@ -24,6 +24,18 @@ clean:
 	-rm *.o
 	-rm $(PROGRAM)
 
+setup:
+	sudo apt install libusb-1.0-0-dev	
+	git clone https://github.com/xairy/raw-gadget.git
+	ptach < raw_gadget.patch
+	cd raw-gadget/raw_gadget && make
+	sudo mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/raw_gadget
+	sudo cp raw-gadget/raw_gadget/raw_gadget.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/raw_gadget/raw_gadget.ko
+	sudo depmod
+	echo "dtoverlay=dwc2" | sudo tee -a /boot/config.txt
+	echo "dwc2" | sudo tee -a /etc/modules
+	echo "raw_gadget" | sudo tee -a /etc/modules
+
 install: $(PROGRAM)
 	sudo cp raspi-g29-mixer.service /lib/systemd/system/.
 	sudo cp raspi-g29-mixer /usr/local/bin/.
@@ -39,14 +51,3 @@ stop:
 
 status:
 	sudo systemctl status raspi-g29-mixer.service
-
-raw-gadget:
-	git clone https://github.com/xairy/raw-gadget.git
-
-raw_gadget_install:
-	sudo cp raw-gadget/raw_gadget/raw_gadget.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/raw_gadget/raw_gadget.ko
-	sudo depmod
-	echo "dtoverlay=dwc2" | sudo tee -a /boot/cnfig.txt
-	echo "dwc2" | sudo tee -a /etc/modules
-	echo "raw_gadget" | sudo tee -a /etc/modules
-
