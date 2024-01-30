@@ -1,4 +1,7 @@
 #include "input-device.h"
+#include <vector>
+
+libusb_context* InputDevice::context = NULL;
 
 int InputDevice::hotplug_callback(struct libusb_context *ctx __attribute__((unused)),
 			struct libusb_device *dev __attribute__((unused)),
@@ -22,6 +25,8 @@ void *InputDevice::hotplug_monitor(void *arg __attribute__((unused)))
 
 int InputDevice::get_descriptor(libusb_device *device)
 {
+	this->device = device;
+
 	int result;
 	result = libusb_get_device_descriptor(device, &device_device_desc);
 	if (result != LIBUSB_SUCCESS) {
@@ -30,6 +35,11 @@ int InputDevice::get_descriptor(libusb_device *device)
 					libusb_strerror((libusb_error)result));
 		}
 		return result;
+	}
+	if (verbose_level) {
+		printf("vendor=%x\n", device_device_desc.idVendor);
+		printf("product=%x\n", device_device_desc.idProduct);
+		printf("serial=%x\n", device_device_desc.iSerialNumber);
 	}
 
 	device_config_desc = new struct libusb_config_descriptor *[device_device_desc.bNumConfigurations];
@@ -42,22 +52,42 @@ int InputDevice::get_descriptor(libusb_device *device)
 			}
 			return result;
 		}
+
+		if (verbose_level) {
+			libusb_config_descriptor *config_desc = device_config_desc[i];
+			for (int j = 0; j < config_desc->bNumInterfaces; j++) {
+				const libusb_interface interface = config_desc->interface[j];
+				for (int k = 0; k < interface.num_altsetting; k++) {
+					const libusb_interface_descriptor altsetting = interface.altsetting[k];
+					for (int l = 0; l < altsetting.bNumEndpoints; l++) {
+						const libusb_endpoint_descriptor endpoint = altsetting.endpoint[k];
+						printf("conf=%d int=%d alt=%d addr=%x\n", j, k, l, endpoint.bEndpointAddress);
+					}
+
+				}
+
+			}
+		}
 	}
 
 	return LIBUSB_SUCCESS;
 }
 
-int InputDevice::connect_device(int vendor_id, int product_id) {
+std::vector<InputDevice *>* InputDevice::connect(int vendor_id, int product_id)
+{
 	int result;
+	std::vector<InputDevice *> *found = new std::vector<InputDevice *>();
+
 	result = libusb_init(&context);
 	if (result < 0) {
 		fprintf(stderr, "Init error: %s\n", libusb_strerror((libusb_error)result));
-		return 1;
+		delete found;
+		return NULL;
 	}
 	libusb_set_debug(context, 3);
 
 	libusb_device **list = NULL;
-	libusb_device *found = NULL;
+	// libusb_device *found = NULL;
 
 	int cnt = libusb_get_device_list(context, &list);
 	if (cnt < 0) {
@@ -65,53 +95,56 @@ int InputDevice::connect_device(int vendor_id, int product_id) {
 			fprintf(stderr, "Error retrieving device list: %s\n",
 					libusb_strerror((libusb_error)cnt));
 		}
-		return cnt;
+		delete found;
+		return NULL;
 	}
 
-	while (found == NULL) {
-		cnt = libusb_get_device_list(context, &devs);
-		if (cnt < 0) {
-			fprintf(stderr, "Get Device Error: %s\n",
-					libusb_strerror((libusb_error)cnt));
-			return 1;
-		}
-		if (verbose_level)
-			printf("%d Devices in list\n", cnt);
+	if (verbose_level)
+		printf("%d Devices in list\n", cnt);
 
-		for (int i = 0; i < cnt; i++) {
-			libusb_device *dvc = devs[i];
-			result = get_descriptor(dvc);
-			if (result != LIBUSB_SUCCESS)
-				continue;
-
-			if (device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB)
-				continue;
-
-			if (vendor_id == -1 && product_id == -1) {
-				found = dvc;
-				break;
-			}
-			else if ((vendor_id == device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
-				(product_id == device_device_desc.idProduct || product_id == LIBUSB_HOTPLUG_MATCH_ANY)) {
-				found = dvc;
-				break;
-			}
+	for (int i = 0; i < cnt; i++) {
+		libusb_device *dvc = list[i];
+		InputDevice *id = new InputDevice();
+		result = id->get_descriptor(dvc);
+		if (result != LIBUSB_SUCCESS) {
+			delete id;
+			continue;
 		}
 
-		if (verbose_level && vendor_id != -1 && product_id != -1)
-			printf("Target device not found\n");
-		libusb_free_device_list(devs, 1);
-		sleep(1);
+		if (id->device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB) {
+			delete id;
+			continue;
+		}
+
+		if ((vendor_id == id->device_device_desc.idVendor || vendor_id == LIBUSB_HOTPLUG_MATCH_ANY) &&
+			(product_id == id->device_device_desc.idProduct || product_id == LIBUSB_HOTPLUG_MATCH_ANY)) {
+			found->push_back(id);
+		}
 	}
 
-	result = libusb_open(found, &dev_handle);
+	// libusb_free_device_list(list, 1);
+
+
+	if (found->size() == 0) {
+		printf("Target device not found\n");
+		delete found;
+		return NULL;
+	}
+
+	return found;
+}
+
+int InputDevice::connect_device() {
+	int result;
+
+	result = libusb_open(device, &dev_handle);
 	if (result != LIBUSB_SUCCESS) {
 		if (verbose_level) {
 			fprintf(stderr, "Error opening device handle: %s\n",
 					libusb_strerror((libusb_error)result));
 		}
 		dev_handle = NULL;
-		libusb_free_device_list(list, 1);
+		// libusb_free_device_list(list, 1);
 		return result;
 	}
 
@@ -159,7 +192,7 @@ int InputDevice::connect_device(int vendor_id, int product_id) {
 	if (callback_handle == -1) {
 		result = libusb_hotplug_register_callback(context,
 			(libusb_hotplug_event) (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT),
-			(libusb_hotplug_flag) 0, vendor_id, product_id,
+			(libusb_hotplug_flag) 0, device_device_desc.idVendor , device_device_desc.idProduct,
 			LIBUSB_HOTPLUG_MATCH_ANY, InputDevice::hotplug_callback, NULL, &callback_handle);
 
 		if (result != LIBUSB_SUCCESS) {

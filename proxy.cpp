@@ -174,6 +174,10 @@ void *trim_loop_read(void *arg)
 	std::deque<usb_raw_transfer_io> *data_queue = thread_info.data_queue;
 	std::mutex *data_mutex = thread_info.data_mutex;
 
+	if (verbose_level) {
+		printf("Start reading thread fort trim device, thread id(%d)\n", gettid());
+	}
+		
 	while (!please_stop_eps) {
 		struct usb_raw_transfer_io io;
 
@@ -184,7 +188,13 @@ void *trim_loop_read(void *arg)
 
 		unsigned char *data = NULL;
 		int nbytes = -1;
+		if (verbose_level > 2) {
+			printf("waiting data from trim device, thread id(%d)\n", gettid());
+		}
 		int rv = trim->receive_data(0x84, USB_ENDPOINT_XFER_INT, 64, &data, &nbytes, 0);
+		if (verbose_level > 2) {
+			printf("received data from trim device, thread id(%d)\n", gettid());
+		}
 		if (rv == LIBUSB_ERROR_NO_DEVICE) {
 			printf("EP%x(%s_%s): device likely reset, stopping thread\n", 0x84, "int", "in");
 			break;
@@ -220,8 +230,10 @@ void *ep_loop_read(void *arg) {
 	std::deque<usb_raw_transfer_io> *data_queue = thread_info.data_queue;
 	std::mutex *data_mutex = thread_info.data_mutex;
 
-	printf("Start reading thread for EP%02x, thread id(%d)\n",
-		ep.bEndpointAddress, gettid());
+	if (verbose_level) {
+		printf("Start reading thread for EP%02x, thread id(%d)\n",
+			ep.bEndpointAddress, gettid());
+	}
 
 	while (!please_stop_eps) {
 		assert(ep_num != -1);
@@ -292,17 +304,21 @@ void *ep_loop_read(void *arg) {
 		}
 	}
 
-	printf("End reading thread for EP%02x, thread id(%d)\n",
-		ep.bEndpointAddress, gettid());
+	if (verbose_level) {
+		printf("End reading thread for EP%02x, thread id(%d)\n",
+			ep.bEndpointAddress, gettid());
+	}
 	return NULL;
 }
 
-void process_eps(int fd, int config, int interface, int altsetting, InputDevice *trim)
+void process_eps(int fd, int config, int interface, int altsetting, std::vector<InputDevice*> *trims)
 {
 	struct raw_gadget_altsetting *alt = &host_device_desc.configs[config]
 					.interfaces[interface].altsettings[altsetting];
 
-	printf("Activating %d endpoints on interface %d\n", (int)alt->interface.bNumEndpoints, interface);
+	if (verbose_level) {
+		printf("Activating %d endpoints on interface %d\n", (int)alt->interface.bNumEndpoints, interface);
+	}
 
 	for (int i = 0; i < alt->interface.bNumEndpoints; i++) {
 		struct raw_gadget_endpoint *ep = &alt->endpoints[i];
@@ -351,12 +367,21 @@ void process_eps(int fd, int config, int interface, int altsetting, InputDevice 
 
 		if (ep->thread_info.endpoint.bEndpointAddress == 0x81)
 		{
-			ep->thread_info.trim = trim;
-			pthread_create(&ep->trim_thread_read, 0, trim_loop_read, (void*)&ep->thread_info);
+			size_t n = trims->size();
+			ep->n_trim_thread_read = n;
+			for (size_t i = 0; i < n; i++) {
+				InputDevice *trim = trims->at(i);
+				struct thread_info *ti = new struct thread_info;
+				memcpy(ti, &ep->thread_info, sizeof(thread_info));
+				ti->trim = trim;
+				pthread_create(&ep->trim_thread_read[i], 0, trim_loop_read, (void*)ti);
+			}
 		}
 	}
 
-	printf("process_eps done\n");
+	if (verbose_level) {
+		printf("process_eps done\n");
+	}
 }
 
 void terminate_eps(int fd, int config, int interface, int altsetting)
@@ -375,12 +400,16 @@ void terminate_eps(int fd, int config, int interface, int altsetting)
 		if (ep->thread_write && pthread_join(ep->thread_write, NULL)) {
 			fprintf(stderr, "Error join thread_write\n");
 		}
-		if (ep->trim_thread_read && pthread_join(ep->trim_thread_read, NULL)) {
-			fprintf(stderr, "Error join trim_thread_read\n");
+		for (size_t i = 0; i < ep->n_trim_thread_read; i++) {
+			if (ep->trim_thread_read[i] && pthread_join(ep->trim_thread_read[i], NULL)) {
+				fprintf(stderr, "Error join trim_thread_read\n");
+			}
 		}
 		ep->thread_read = 0;
 		ep->thread_write = 0;
-		ep->trim_thread_read = 0;
+		for (size_t i = 0; i < ep->n_trim_thread_read; i++)
+			ep->trim_thread_read[i] = 0;
+		ep->n_trim_thread_read = 0;
 
 		usb_raw_ep_disable(fd, ep->thread_info.ep_num);
 		ep->thread_info.ep_num = -1;
@@ -392,10 +421,12 @@ void terminate_eps(int fd, int config, int interface, int altsetting)
 	please_stop_eps = false;
 }
 
-void ep0_loop(int fd, InputDevice *trim) {
+void ep0_loop(int fd, std::vector<InputDevice *> *trims) {
 	bool set_configuration_done_once = false;
 
-	printf("Start for EP0, thread id(%d)\n", gettid());
+	if (verbose_level) {
+		printf("Start for EP0, thread id(%d)\n", gettid());
+	}
 
 	if (verbose_level)
 		print_eps_info(fd);
@@ -526,7 +557,7 @@ void ep0_loop(int fd, InputDevice *trim) {
 					iface->current_altsetting = 0;
 					int interface_num = iface->altsettings[0].interface.bInterfaceNumber;
 					claim_interface(interface_num);
-					process_eps(fd, desired_config, i, 0, trim);
+					process_eps(fd, desired_config, i, 0, trims);
 					usleep(10000); // Give threads time to spawn.
 				}
 
@@ -582,7 +613,7 @@ void ep0_loop(int fd, InputDevice *trim) {
 					set_interface_alt_setting(alt->interface.bInterfaceNumber,
 						alt->interface.bAlternateSetting);
 					process_eps(fd, host_device_desc.current_config,
-						desired_interface, desired_altsetting, trim);
+						desired_interface, desired_altsetting, trims);
 					iface->current_altsetting = desired_altsetting;
 					usleep(10000); // Give threads time to spawn.
 				}

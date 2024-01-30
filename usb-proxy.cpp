@@ -4,6 +4,7 @@
 #include "misc.h"
 
 #include "input-device.h"
+#include <vector>
 
 int verbose_level = 0;
 bool please_stop_ep0 = false;
@@ -211,9 +212,14 @@ int main(int argc, char **argv)
 	}
 	printf("Wheel Device opened successfully\n");
 
-	InputDevice trim;
-	while (trim.connect_device(0x2341, 0x8037)) {
+	std::vector<InputDevice *> *trims = NULL;
+	while (trims == NULL) {
+		trims = InputDevice::connect(0x2341, 0x8037);
 		sleep(1);
+	}
+	printf("Found %ld trim devices\n", trims->size());
+	for (size_t i = 0; i < trims->size(); i++) {
+		trims->at(i)->connect_device();
 	}
 	printf("Trim Device opened successfully\n");
 
@@ -222,9 +228,10 @@ int main(int argc, char **argv)
 
 	int fd = usb_raw_open();
 	usb_raw_init(fd, USB_SPEED_HIGH, driver, device);
+	sleep(1);
 	usb_raw_run(fd);
 
-	ep0_loop(fd, &trim);
+	ep0_loop(fd, trims);
 
 	close(fd);
 

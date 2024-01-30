@@ -1,14 +1,17 @@
 #ifndef INPUT_DEVICE_H
 #define INPUT_DEVICE_H
 #include <libusb-1.0/libusb.h>
-
+#include <vector>
 #include "misc.h"
 
 class InputDevice
 {
+    static libusb_context			            *context;
+
     libusb_device			            **devs;
+
+    libusb_device                       *device;
     libusb_device_handle	        	*dev_handle;
-    libusb_context			            *context;
     libusb_hotplug_callback_handle	    callback_handle;
 
     struct libusb_device_descriptor		device_device_desc;
@@ -28,7 +31,8 @@ class InputDevice
 
 public:
     ~InputDevice();
-    int connect_device(int vendorId, int productId);
+    static std::vector<InputDevice *>* connect(int vendorId, int productId);
+    int connect_device();
     void reset_device();
     void set_configuration(int configuration);
     void claim_interface(int interface);

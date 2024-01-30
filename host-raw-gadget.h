@@ -134,7 +134,8 @@ struct raw_gadget_endpoint {
 	struct usb_endpoint_descriptor	endpoint;
 	pthread_t			thread_read;
 	pthread_t			thread_write;
-	pthread_t			trim_thread_read;
+	pthread_t			trim_thread_read[2];
+	size_t				n_trim_thread_read;
 	struct thread_info		thread_info;
 };
 
