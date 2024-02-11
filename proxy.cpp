@@ -18,9 +18,9 @@ void printData(struct usb_raw_transfer_io io, __u8 bEndpointAddress, std::string
 
 void mix(unsigned char *w, unsigned char *t)
 {
-	w[1] = (w[1] & 0xfc) | ((t[2] & 0x04) >> 1) | ((t[2] & 0x08) >> 3);
-	w[2] = (w[2] & 0x7f) | ((t[2] & 0x01) << 7);
-	w[3] = (w[3] & 0xfe) | ((t[2] & 0x02) >> 1);	
+	w[1] = (w[1] & 0xfc) | ((t[1] & 0x04) >> 1) | ((t[1] & 0x08) >> 3);
+	w[2] = (w[2] & 0x7f) | ((t[1] & 0x01) << 7);
+	w[3] = (w[3] & 0xfe) | ((t[1] & 0x02) >> 1);	
 }
 
 void *ep_loop_write(void *arg) {
@@ -59,7 +59,7 @@ void *ep_loop_write(void *arg) {
 		int length = io.inner.length;
 		if (ep.bEndpointAddress == 0x81
 			&& io.inner.ep == 0x84
-			&& io.inner.length == 3
+			&& io.inner.length == 2
 			&& io.data[0] == 0x03)
 		{
 			memcpy(&trim_data, io.data, length);
@@ -209,8 +209,13 @@ void *trim_loop_read(void *arg)
 			data_mutex->lock();
 			data_queue->push_back(io);
 			data_mutex->unlock();
-			if (verbose_level)
+			if (verbose_level) {
+				for (int i = 0; i < nbytes; i++) {
+					printf(" %02X", data[i]);
+				}
+				printf("\n");
 				printf("EP%x(%s_%s): enqueued %d bytes to queue\n", 0x84, "int", "in", nbytes);				
+			}
 		}
 
 		if (data)
