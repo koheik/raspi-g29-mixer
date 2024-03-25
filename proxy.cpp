@@ -434,7 +434,23 @@ void ep0_loop(int fd) {
 					}
 				}
 
-				if (event.ctrl.bRequestType == 0x80 && event.ctrl.wValue == 0x302) {
+				if (event.ctrl.bRequestType == 0x80
+					&& event.ctrl.bRequest == 0x06
+					&& event.ctrl.wValue == 0x100) {
+					for (int k = 0; k < nbytes; k++) {
+						printf(" %02x", io.data[k]);
+					}
+					printf("\n");
+					io.data[10] = 0x61;
+					for (int k = 0; k < nbytes; k++) {
+						printf(" %02x", io.data[k]);
+					}
+					printf("\n");
+				}
+
+				if (event.ctrl.bRequestType == 0x80
+					&& event.ctrl.bRequest == 0x06
+					&& event.ctrl.wValue == 0x302) {
 					for (int k = 0; k < nbytes; k++) {
 						printf(" %02x", io.data[k]);
 					}
@@ -467,7 +483,9 @@ void ep0_loop(int fd) {
 					printf("\n");
 				}
 
-				if (event.ctrl.bRequestType == 0x80 && event.ctrl.wValue == 0x303) {
+				if (event.ctrl.bRequestType == 0x80
+					&& event.ctrl.bRequest == 0x06
+					&& event.ctrl.wValue == 0x303) {
 					for (int k = 0; k < nbytes; k++) {
 						printf(" %02x", io.data[k]);
 					}
