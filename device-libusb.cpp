@@ -91,6 +91,10 @@ int connect_device(int vendor_id, int product_id) {
 			if (result != LIBUSB_SUCCESS)
 				continue;
 
+			printf("idVendor = 0x%x\n", device_device_desc.idVendor);
+			printf("idProduct = 0x%x\n", device_device_desc.idProduct);
+			printf("bcdUSB = 0x%x\n", device_device_desc.bcdUSB);
+
 			if (device_device_desc.bDeviceClass == LIBUSB_CLASS_HUB)
 				continue;
 
@@ -136,6 +140,7 @@ int connect_device(int vendor_id, int product_id) {
 				libusb_strerror((libusb_error)result));
 		return result;
 	}
+	printf("configuration = %d\n", config);
 
 	for (int i = 0; i < device_device_desc.bNumConfigurations; i++) {
 		if (device_config_desc[i]->bConfigurationValue != config)
@@ -143,6 +148,10 @@ int connect_device(int vendor_id, int product_id) {
 		for (int j = 0; j < device_config_desc[i]->bNumInterfaces; j++)
 			libusb_detach_kernel_driver(dev_handle, j);
 	}
+	libusb_detach_kernel_driver(dev_handle, 0);
+	libusb_detach_kernel_driver(dev_handle, 1);
+	libusb_detach_kernel_driver(dev_handle, 2);
+	libusb_detach_kernel_driver(dev_handle, 3);
 
 	if (reset_device_before_proxy) {
 		result = libusb_reset_device(dev_handle);
@@ -151,7 +160,6 @@ int connect_device(int vendor_id, int product_id) {
 					libusb_strerror((libusb_error)result));
 			return result;
 		}
-		sleep(7);
 	}
 
 	//check that device is responsive
@@ -162,7 +170,6 @@ int connect_device(int vendor_id, int product_id) {
 				libusb_strerror((libusb_error)result));
 		return result;
 	}
-
 	if (callback_handle == -1) {
 		result = libusb_hotplug_register_callback(context,
 			(libusb_hotplug_event) (LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT),
@@ -190,10 +197,14 @@ void reset_device() {
 }
 
 void set_configuration(int configuration) {
+	printf("set_configuration(%d)\n", configuration);
+	libusb_detach_kernel_driver(dev_handle, 0);
+	libusb_detach_kernel_driver(dev_handle, 1);
 	int result = libusb_set_configuration(dev_handle, configuration);
 	if (result != LIBUSB_SUCCESS) {
 		fprintf(stderr, "Error setting configuration(%d): %s\n",
 				configuration, libusb_strerror((libusb_error)result));
+		exit(-1);
 	}
 }
 

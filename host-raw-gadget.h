@@ -4,8 +4,6 @@
 
 #include "misc.h"
 
-#include "input-device.h"
-
 /*----------------------------------------------------------------------*/
 
 #define UDC_NAME_LENGTH_MAX 128
@@ -127,15 +125,12 @@ struct thread_info {
 	std::string			dir;
 	std::deque<usb_raw_transfer_io> *data_queue;
 	std::mutex			*data_mutex;
-	InputDevice			*trim;
 };
 
 struct raw_gadget_endpoint {
 	struct usb_endpoint_descriptor	endpoint;
 	pthread_t			thread_read;
 	pthread_t			thread_write;
-	pthread_t			trim_thread_read[2];
-	size_t				n_trim_thread_read;
 	struct thread_info		thread_info;
 };
 

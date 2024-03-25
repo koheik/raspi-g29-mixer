@@ -1,5 +1,5 @@
 PROGRAM=raspi-g29-mixer
-LDFLAG=-lusb-1.0 -pthread # -ljsoncpp
+LDFLAG=-lusb-1.0 -pthread -ljsoncpp
 
 ifndef CFLAGS
 	ifeq ($(TARGET),Debug)
